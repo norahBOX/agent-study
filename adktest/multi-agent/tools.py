@@ -15,7 +15,9 @@ GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
 
-with open("norahbox-personal-3a3bf2f91dc7-cometogether.json", "r") as f:
+with open(
+    "service_account_credential_here.json", "r"
+) as f:  # connector의 서비스 어카운트
     service_account_json = json.load(f)
 
 oauth2_data_google_cloud = {
