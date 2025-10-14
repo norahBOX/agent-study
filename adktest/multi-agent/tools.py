@@ -8,7 +8,10 @@ from googleapiclient.http import MediaIoBaseDownload
 
 
 # If modifying these scopes, delete the file token.json.
-TOKEN_PATH = Path(__file__).resolve().parent.parent / "oauth2_flask" / "temp_token_repo"
+TOKEN_PATH = (
+    Path(__file__).resolve().parent.parent.parent / "oauth2_flask" / "temp_token_repo"
+)
+print(TOKEN_PATH)
 DOWNLOAD_PATH = Path(__file__).resolve().parent / "data"
 FLASK_AUTH_URL = "http://localhost:8000/authorize"
 SCOPES = [
