@@ -8,8 +8,8 @@ root_agent = Agent(
     model="gemini-2.0-flash",
     description="You are helpful assitant",
     tools=[
-        drive_api.get_auth_error_message,
-        drive_api.list_files,
+        drive_api.check_auth_status,
+        drive_api.get_files_and_folders_list,
         drive_api.download_files,
         drive_api.list_files_in_specific_folder,
         drive_api.find_file_id,

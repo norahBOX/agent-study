@@ -11,7 +11,6 @@ from googleapiclient.http import MediaIoBaseDownload
 TOKEN_PATH = (
     Path(__file__).resolve().parent.parent.parent / "oauth2_flask" / "temp_token_repo"
 )
-print(TOKEN_PATH)
 DOWNLOAD_PATH = Path(__file__).resolve().parent / "data"
 FLASK_AUTH_URL = "http://localhost:8000/authorize"
 SCOPES = [
@@ -26,7 +25,7 @@ class DriveAPI:
 
     def get_credentials(self):
         """
-        Google 로그인이 완료 된 인증 정보 token 파일을 찾아 credentials 을 생성한다.
+        Google 로그인이 완료된 인증 정보 token.json 파일을 찾아 credentials을 생성한다.
         """
         creds = None
 
@@ -44,28 +43,28 @@ class DriveAPI:
                     creds = None
 
         self.credentials = creds
-        return self.credentials
+        return
 
-    def get_auth_error_message(self):
+    def check_auth_status(self):
         """
-        Google 로그인 인증 상태를 확인하고, 유효하지 않으면 오류 메시지를 반환한다.
+        Google 로그인 인증 상태를 확인하고, 로그인이 되어 있지 않으면 사용자에게 로그인 할 수 있는 링크를 제공한다.
         """
         self.get_credentials()
         if self.credentials is None:
             return (
                 f"ERROR: Google Drive 접근 권한이 필요합니다. "
-                f"로그인 후 작업을 다시 시도해 주세요. [인증하기]({FLASK_AUTH_URL})"
+                f"로그인 후 작업을 다시 시도해 주세요. [로그인 url]({FLASK_AUTH_URL})"
             )
         return None
 
-    def list_files(self):
+    def get_files_and_folders_list(self):
         """
-        Get files list in Google Drive.
+        Get files and folders list in Google Drive.
 
-        Args:
-            credentials: Credentials from get_credentials() function.
+        Returns:
+            list: A list containing (id, name, mimeType)
         """
-        auth_error = self.get_auth_error_message()
+        auth_error = self.check_auth_status()
         if auth_error:
             return auth_error
 
@@ -77,10 +76,9 @@ class DriveAPI:
                 service.files()
                 .list(
                     pageSize=10,
-                    fields="nextPageToken, files(kind, id, name)",
-                    # q="mimeType = 'application/vnd.google-apps.folder'",
+                    fields="nextPageToken, files(id, name, kind, mimeType)",
                 )
-                .execute()  # call
+                .execute()
             )
             items = results.get("files", [])
 
@@ -88,7 +86,7 @@ class DriveAPI:
                 print("No files found.")
                 return
 
-            return [(item["name"], item["id"]) for item in items]
+            return [(item["name"], item["id"], item["mimeType"]) for item in items]
 
         except HttpError as error:
             # TODO(developer) - Handle errors from drive API.
@@ -100,8 +98,10 @@ class DriveAPI:
         Download a file from Google Drive and save it local directory.
 
         Args:
-            file_name (str): A file name to download from Google Drive. Save the file at local directory with the same file name.
+            file_name (str): A file or folder name to download from Google Drive. Save the file at local directory with the same file name.
             file_id (str): File id of a file in Google Drive.
+        Returns:
+            str: success or fail(error) result message
         """
         auth_error = self.get_auth_error_message()
         if auth_error:
@@ -122,15 +122,19 @@ class DriveAPI:
             downloaded = file.getvalue()
             with open(f"{DOWNLOAD_PATH}/{file_name}", "wb") as f:
                 f.write(downloaded)
-            return
+            return "file download complete."
 
         except HttpError as error:
-            print(f"An error occurred: {error}")
-            return
+            # print(f"An error occurred: {error}")
+            return f"An error occurred while file download: {error}"
 
-    def list_files_in_specific_folder(self, directory_id: str):
+    def list_files_in_specific_folder(self, folder_id: str):
         """
-        특정 디렉토리 내의 파일 리스트
+        특정 폴더 내의 파일 리스트를 반환한다.
+        Args:
+            folder_id: 특정 폴더의 ID
+        Returns:
+            list: A list containing (id, name, mimeType)
         """
         auth_error = self.get_auth_error_message()
         if auth_error:
@@ -143,9 +147,9 @@ class DriveAPI:
                 .list(
                     pageSize=10,
                     fields="nextPageToken, files(id, name, kind, mimeType)",
-                    q=f"{directory_id} in parents",
+                    q=f"{folder_id} in parents",
                 )
-                .execute()  # call
+                .execute()
             )
             items = results.get("files", [])
 
@@ -155,13 +159,17 @@ class DriveAPI:
 
             return [(item["name"], item["id"], item["mimeType"]) for item in items]
         except HttpError as error:
-            # TODO(developer) - Handle errors from drive API.
             print(f"An error occurred: {error}")
             return
 
     def find_file_id(self, file_name: str):
         """
-        파일(혹은 폴더) 이름으로 파일 ID 찾기
+        Retrieve file or folders which name contains specific strings.
+        Args:
+            file_name: specific strings to find files or folders
+
+        Returns:
+            list: A list containing (id, name, mimeType)
         """
         try:
             service = build("drive", "v3", credentials=self.credentials)
@@ -172,7 +180,7 @@ class DriveAPI:
                     fields="nextPageToken, files(id, name, kind, mimeType)",
                     q=f"name contains '{file_name}'",
                 )
-                .execute()  # call
+                .execute()
             )
             items = results.get("files", [])
 
@@ -183,6 +191,5 @@ class DriveAPI:
             return [(item["name"], item["id"], item["mimeType"]) for item in items]
 
         except HttpError as error:
-            # TODO(developer) - Handle errors from drive API.
             print(f"An error occurred: {error}")
             return
