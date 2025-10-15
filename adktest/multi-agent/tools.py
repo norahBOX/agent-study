@@ -103,7 +103,7 @@ class DriveAPI:
         Returns:
             str: success or fail(error) result message
         """
-        auth_error = self.get_auth_error_message()
+        auth_error = self.check_auth_status()
         if auth_error:
             return auth_error
 
@@ -136,7 +136,7 @@ class DriveAPI:
         Returns:
             list: A list containing (id, name, mimeType)
         """
-        auth_error = self.get_auth_error_message()
+        auth_error = self.check_auth_status()
         if auth_error:
             return auth_error
 
