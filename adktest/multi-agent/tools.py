@@ -16,6 +16,7 @@ DOWNLOAD_PATH = Path(__file__).resolve().parent / "data"
 FLASK_AUTH_URL = "http://localhost:8000/authorize"
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
 ]
 
 
@@ -124,5 +125,64 @@ class DriveAPI:
             return
 
         except HttpError as error:
+            print(f"An error occurred: {error}")
+            return
+
+    def list_files_in_specific_folder(self, directory_id: str):
+        """
+        특정 디렉토리 내의 파일 리스트
+        """
+        auth_error = self.get_auth_error_message()
+        if auth_error:
+            return auth_error
+
+        try:
+            service = build("drive", "v3", credentials=self.credentials)
+            results = (
+                service.files()
+                .list(
+                    pageSize=10,
+                    fields="nextPageToken, files(id, name, kind, mimeType)",
+                    q=f"{directory_id} in parents",
+                )
+                .execute()  # call
+            )
+            items = results.get("files", [])
+
+            if not items:
+                print("No files found.")
+                return
+
+            return [(item["name"], item["id"], item["mimeType"]) for item in items]
+        except HttpError as error:
+            # TODO(developer) - Handle errors from drive API.
+            print(f"An error occurred: {error}")
+            return
+
+    def find_file_id(self, file_name: str):
+        """
+        파일(혹은 폴더) 이름으로 파일 ID 찾기
+        """
+        try:
+            service = build("drive", "v3", credentials=self.credentials)
+            results = (
+                service.files()
+                .list(
+                    pageSize=10,
+                    fields="nextPageToken, files(id, name, kind, mimeType)",
+                    q=f"name contains '{file_name}'",
+                )
+                .execute()  # call
+            )
+            items = results.get("files", [])
+
+            if not items:
+                print("No files found.")
+                return
+
+            return [(item["name"], item["id"], item["mimeType"]) for item in items]
+
+        except HttpError as error:
+            # TODO(developer) - Handle errors from drive API.
             print(f"An error occurred: {error}")
             return
