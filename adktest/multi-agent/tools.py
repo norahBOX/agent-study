@@ -1,57 +1,191 @@
-import os
-import json
-from google.adk import Agent
-from google.adk.auth.auth_credential import AuthCredential
-from google.adk.auth.auth_credential import AuthCredentialTypes
-from google.adk.auth.auth_credential import OAuth2Auth
-from google.adk.tools.application_integration_tool.application_integration_toolset import (
-    ApplicationIntegrationToolset,
+import io
+from pathlib import Path
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseDownload
+
+
+# If modifying these scopes, delete the file token.json.
+TOKEN_PATH = (
+    Path(__file__).resolve().parent.parent.parent / "oauth2_flask" / "temp_token_repo"
 )
-from google.adk.tools import FunctionTool  # Tool을 만들 때 필요함
-from google.adk.tools.openapi_tool.auth.auth_helpers import dict_to_auth_scheme
-from google.genai import types
+DOWNLOAD_PATH = Path(__file__).resolve().parent / "data"
+FLASK_AUTH_URL = "http://localhost:8000/authorize"
+SCOPES = [
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
+]
 
-GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
-client_id = os.getenv("CLIENT_ID")
-client_secret = os.getenv("CLIENT_SECRET")
 
-with open(
-    "service_account_credential_here.json", "r"
-) as f:  # connector의 서비스 어카운트
-    service_account_json = json.load(f)
+class DriveAPI:
+    def __init__(self):
+        self.credentials = None
 
-oauth2_data_google_cloud = {
-    "type": "oauth2",
-    "flows": {
-        "authorizationCode": {
-            "authorizationUrl": "https://accounts.google.com/o/oauth2/auth",
-            "tokenUrl": "https://oauth2.googleapis.com/token",
-            "scopes": {
-                "https://www.googleapis.com/auth/drive.metadata.readonly": (
-                    "google drive metadata read"
-                ),
-            },
-        }
-    },
-}
-oauth2_scheme = dict_to_auth_scheme(oauth2_data_google_cloud)
+    def get_credentials(self):
+        """
+        Google 로그인이 완료된 인증 정보 token.json 파일을 찾아 credentials을 생성한다.
+        """
+        creds = None
 
-auth_credential = AuthCredential(
-    auth_type=AuthCredentialTypes.OAUTH2,
-    oauth2=OAuth2Auth(
-        client_id=client_id,
-        client_secret=client_secret,
-    ),
-)
+        if (TOKEN_PATH / "token.json").exists():
+            creds = Credentials.from_authorized_user_file(
+                (TOKEN_PATH / "token.json"), SCOPES
+            )
 
-connector_tool = ApplicationIntegrationToolset(
-    project=GOOGLE_CLOUD_PROJECT,
-    location="us-central1",
-    connection="adk-test",
-    entity_operations={},
-    actions=["GET_files"],
-    tool_instructions="Use this tool to list google drive files.",
-    service_account_json=json.dumps(service_account_json),
-    auth_scheme=oauth2_scheme,
-    auth_credential=auth_credential,
-)
+            # token이 있지만 못쓰는 상황이면 refresh
+            if creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    print(f"Error refreshing token: {e}")
+                    creds = None
+
+        self.credentials = creds
+        return
+
+    def check_auth_status(self):
+        """
+        Google 로그인 인증 상태를 확인하고, 로그인이 되어 있지 않으면 사용자에게 로그인 할 수 있는 링크를 제공한다.
+        """
+        self.get_credentials()
+        if self.credentials is None:
+            return (
+                f"ERROR: Google Drive 접근 권한이 필요합니다. "
+                f"로그인 후 작업을 다시 시도해 주세요. [로그인 url]({FLASK_AUTH_URL})"
+            )
+        return None
+
+    def get_files_and_folders_list(self):
+        """
+        Get files and folders list in Google Drive.
+
+        Returns:
+            list: A list containing (id, name, mimeType)
+        """
+        auth_error = self.check_auth_status()
+        if auth_error:
+            return auth_error
+
+        try:
+            service = build("drive", "v3", credentials=self.credentials)
+
+            # Call the Drive v3 API
+            results = (
+                service.files()
+                .list(
+                    pageSize=10,
+                    fields="nextPageToken, files(id, name, kind, mimeType)",
+                )
+                .execute()
+            )
+            items = results.get("files", [])
+
+            if not items:
+                print("No files found.")
+                return
+
+            return [(item["name"], item["id"], item["mimeType"]) for item in items]
+
+        except HttpError as error:
+            return f"An error occurred: {error}"
+
+    def download_files(self, file_name: str, file_id: str):
+        """
+        Download a file from Google Drive and save it local directory.
+
+        Args:
+            file_name (str): A file or folder name to download from Google Drive. Save the file at local directory with the same file name.
+            file_id (str): File id of a file in Google Drive.
+        Returns:
+            str: success or fail(error) result message
+        """
+        auth_error = self.check_auth_status()
+        if auth_error:
+            return auth_error
+
+        try:
+            service = build("drive", "v3", credentials=self.credentials)
+
+            # Call the Drive v3 API
+            request = service.files().get_media(fileId=file_id)
+            file = io.BytesIO()
+            downloader = MediaIoBaseDownload(file, request)
+            done = False
+            while done is False:
+                status, done = downloader.next_chunk()
+                print(f"Download {int(status.progress() * 100)}.")
+
+            downloaded = file.getvalue()
+            with open(f"{DOWNLOAD_PATH}/{file_name}", "wb") as f:
+                f.write(downloaded)
+            return "file download completed."
+
+        except HttpError as error:
+            # print(f"An error occurred: {error}")
+            return f"An error occurred while file download: {error}"
+
+    def list_files_in_specific_folder(self, folder_id: str):
+        """
+        특정 폴더 내의 파일 리스트를 반환한다.
+        Args:
+            folder_id: 특정 폴더의 ID
+        Returns:
+            list: A list containing (id, name, mimeType)
+        """
+        auth_error = self.check_auth_status()
+        if auth_error:
+            return auth_error
+
+        try:
+            service = build("drive", "v3", credentials=self.credentials)
+            results = (
+                service.files()
+                .list(
+                    pageSize=10,
+                    fields="nextPageToken, files(id, name, kind, mimeType)",
+                    q=f"'{folder_id}' in parents",
+                )
+                .execute()
+            )
+            items = results.get("files", [])
+
+            if not items:
+                return "No files found."
+
+            return [(item["name"], item["id"], item["mimeType"]) for item in items]
+        except HttpError as error:
+            print(f"An error occurred: {error}")
+            return f"An error occurred: {error}"
+
+    def find_file_id(self, file_name: str):
+        """
+        Retrieve file or folders which name contains specific strings.
+        Args:
+            file_name: specific strings to find files or folders
+
+        Returns:
+            list: A list containing (id, name, mimeType)
+        """
+        try:
+            service = build("drive", "v3", credentials=self.credentials)
+            results = (
+                service.files()
+                .list(
+                    pageSize=10,
+                    fields="nextPageToken, files(id, name, kind, mimeType)",
+                    q=f"name contains '{file_name}'",
+                )
+                .execute()
+            )
+            items = results.get("files", [])
+
+            if not items:
+                print("No files found.")
+                return
+
+            return [(item["name"], item["id"], item["mimeType"]) for item in items]
+
+        except HttpError as error:
+            return f"An error occurred: {error}"
