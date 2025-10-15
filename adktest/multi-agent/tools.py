@@ -89,9 +89,7 @@ class DriveAPI:
             return [(item["name"], item["id"], item["mimeType"]) for item in items]
 
         except HttpError as error:
-            # TODO(developer) - Handle errors from drive API.
-            print(f"An error occurred: {error}")
-            return
+            return f"An error occurred: {error}"
 
     def download_files(self, file_name: str, file_id: str):
         """
@@ -122,7 +120,7 @@ class DriveAPI:
             downloaded = file.getvalue()
             with open(f"{DOWNLOAD_PATH}/{file_name}", "wb") as f:
                 f.write(downloaded)
-            return "file download complete."
+            return "file download completed."
 
         except HttpError as error:
             # print(f"An error occurred: {error}")
@@ -147,20 +145,19 @@ class DriveAPI:
                 .list(
                     pageSize=10,
                     fields="nextPageToken, files(id, name, kind, mimeType)",
-                    q=f"{folder_id} in parents",
+                    q=f"'{folder_id}' in parents",
                 )
                 .execute()
             )
             items = results.get("files", [])
 
             if not items:
-                print("No files found.")
-                return
+                return "No files found."
 
             return [(item["name"], item["id"], item["mimeType"]) for item in items]
         except HttpError as error:
             print(f"An error occurred: {error}")
-            return
+            return f"An error occurred: {error}"
 
     def find_file_id(self, file_name: str):
         """
@@ -191,5 +188,4 @@ class DriveAPI:
             return [(item["name"], item["id"], item["mimeType"]) for item in items]
 
         except HttpError as error:
-            print(f"An error occurred: {error}")
-            return
+            return f"An error occurred: {error}"
