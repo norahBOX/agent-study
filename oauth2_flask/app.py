@@ -59,6 +59,7 @@ def authorize():
         # Enable offline access so that you can refresh an access token without
         # re-prompting the user for permission. Recommended for web server apps.
         access_type="offline",
+        prompt="consent",
         # Enable incremental authorization. Recommended as a best practice.
         include_granted_scopes="true",
     )

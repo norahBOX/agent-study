@@ -38,8 +38,13 @@ class DriveAPI:
             if creds.expired and creds.refresh_token:
                 try:
                     creds.refresh(Request())
+                    # 갱신 성공 시, 갱신된 정보를 token.json 파일에 저장
+                    with open(TOKEN_PATH / "token.json", "w") as token:
+                        token.write(creds.to_json())
                 except Exception as e:
                     print(f"Error refreshing token: {e}")
+                    (TOKEN_PATH / "token.json").unlink()  # 기존 token.json 삭제
+                    print("무효화된 Refresh Token 때문에 token.json 파일을 삭제합니다.")
                     creds = None
 
         self.credentials = creds
